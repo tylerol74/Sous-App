@@ -1,0 +1,7 @@
+{
+  "name": "deploy version of Pantry Chef AI",
+  "description": "An intelligent kitchen assistant that tracks your grocery purchases and pantry/fridge items using photo recognition. Get creative recipe suggestions based on what you have on hand.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
