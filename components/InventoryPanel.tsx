@@ -7,6 +7,7 @@ import { BarcodeScanner } from './BarcodeScanner';
 import { ImageCaptureModal } from './ImageCaptureModal';
 import { ConfirmationPanel } from './ConfirmationPanel';
 import { InventoryList } from './InventoryList';
+import { combineQuantities } from '../utils';
 
 interface InventoryPanelProps {
   inventory: InventoryItem[];
@@ -46,22 +47,44 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({
 
   const handleConfirmationSubmit = useCallback((confirmedItems: Omit<InventoryItem, 'id'>[]) => {
     setInventory(prev => {
-        const existingNames = new Set(prev.map(i => i.name.toLowerCase()));
-        const newItems = confirmedItems
-            .filter(item => item.name.trim() && !existingNames.has(item.name.toLowerCase()))
-            .map(item => ({
-                id: `${Date.now()}-${item.name}`,
-                name: item.name.toLowerCase(),
-                quantity: item.quantity,
-                expirationDate: item.expirationDate,
-            }));
-        return [...prev, ...newItems];
+        const updated = [...prev];
+        confirmedItems.forEach(item => {
+            const nameLower = item.name.trim().toLowerCase();
+            if (!nameLower) return;
+            
+            // Look for existing item with exact same name and exact same expiration date
+            const existingIndex = updated.findIndex(
+              i => i.name.toLowerCase() === nameLower && i.expirationDate === item.expirationDate
+            );
+            
+            if (existingIndex > -1) {
+                const existingItem = updated[existingIndex];
+                updated[existingIndex] = {
+                    ...existingItem,
+                    quantity: combineQuantities(existingItem.quantity, item.quantity)
+                };
+            } else {
+                updated.push({
+                    id: `${Date.now()}-${Math.random().toString(36).substr(2, 5)}-${nameLower}`,
+                    name: nameLower,
+                    quantity: item.quantity || '1',
+                    expirationDate: item.expirationDate || '',
+                });
+            }
+        });
+        return updated;
     });
     setItemsToConfirm(null);
   }, [setInventory]);
   
   const handleImageCapture = useCallback(async ({ imageData, mimeType }: { imageData: string; mimeType: string; }) => {
     setIsCaptureModalOpen(false);
+    // FIX: Type guard to ensure captureContext is valid for identifyItemsFromImage.
+    if (captureContext !== 'pantry' && captureContext !== 'receipt') {
+      console.error('Invalid context for image capture:', captureContext);
+      setError('An unexpected error occurred during image processing.');
+      return;
+    }
     const stateSetter = captureContext === 'pantry' ? setIsIdentifying : setIsScanningReceipt;
     stateSetter(true);
     setError(null);
@@ -83,6 +106,7 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({
 
   const isBusy = isGenerating || isIdentifying || isScanningReceipt;
   const canScanImage = isCameraSupported || isFileUploadSupported;
+  const generateButtonText = mealTypeFilter ? `What should I make for ${mealTypeFilter}?` : "What should I make?";
 
   return (
     <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200/80 flex flex-col h-full">
@@ -230,12 +254,12 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({
           {isGenerating ? (
             <>
               <LoadingSpinner className="h-6 w-6 mr-3" />
-              Generating...
+              Searching...
             </>
           ) : (
             <>
               <SparklesIcon className="h-6 w-6 mr-2" />
-              Generate Recipes
+              {generateButtonText}
             </>
           )}
         </button>

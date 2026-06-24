@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { InventoryItem } from '../types';
-import { PlusIcon, TrashIcon, ChevronDownIcon, WarningIcon } from './icons';
+import { PlusIcon, TrashIcon, ChevronDownIcon, WarningIcon, PencilIcon, CheckIcon, XMarkIcon } from './icons';
 
 interface InventoryListProps {
   inventory: InventoryItem[];
@@ -13,6 +13,9 @@ export const InventoryList: React.FC<InventoryListProps> = ({ inventory, setInve
   const [newItem, setNewItem] = useState({ name: '', quantity: '', expirationDate: '' });
   const [sortBy, setSortBy] = useState<'name' | 'expirationDate'>('name');
   const [isListExpanded, setIsListExpanded] = useState(true);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editingItemName, setEditingItemName] = useState('');
+  const [editError, setEditError] = useState<string | null>(null);
 
   const handleFormInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setNewItem(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -34,12 +37,44 @@ export const InventoryList: React.FC<InventoryListProps> = ({ inventory, setInve
     setInventory(prev => prev.filter(item => item.id !== idToRemove));
   };
   
-  const handleUpdateItem = (id: string, field: keyof Omit<InventoryItem, 'id' | 'name'>, value: string) => {
+  const handleUpdateItem = (id: string, field: keyof Omit<InventoryItem, 'id'>, value: string) => {
     setInventory(prev => 
       prev.map(item => 
         item.id === id ? { ...item, [field]: value } : item
       )
     );
+  };
+
+  const handleStartEdit = (item: InventoryItem) => {
+    setEditingItemId(item.id);
+    setEditingItemName(item.name);
+    setEditError(null);
+  };
+
+  const handleSaveEdit = () => {
+    const trimmedName = editingItemName.trim();
+    if (trimmedName === '') {
+      setEditError('Name cannot be empty.');
+      return;
+    }
+    const isDuplicate = inventory.some(
+      i => i.id !== editingItemId && i.name.toLowerCase() === trimmedName.toLowerCase()
+    );
+    if (isDuplicate) {
+      setEditError('This item already exists in your pantry.');
+      return;
+    }
+    
+    if (editingItemId) {
+      handleUpdateItem(editingItemId, 'name', trimmedName);
+    }
+    setEditingItemId(null);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingItemId(null);
+    setEditingItemName('');
+    setEditError(null);
   };
 
   const getExpirationClasses = (dateString?: string): string => {
@@ -131,35 +166,72 @@ export const InventoryList: React.FC<InventoryListProps> = ({ inventory, setInve
           {inventory.length > 0 ? (
             <div className="overflow-x-auto">
               <div className="space-y-2 min-w-[500px]">
-                <div className="grid grid-cols-[1fr,100px,150px,40px] gap-2 px-2 text-sm">
+                <div className="grid grid-cols-[1fr,100px,150px,80px] gap-2 px-2 text-sm">
                   <SortableHeader title="Item" value="name" />
                   <span className="font-semibold text-slate-500">Quantity</span>
                   <SortableHeader title="Expires" value="expirationDate" />
-                  <span className="sr-only">Actions</span>
+                  <span className="text-right font-semibold text-slate-500 pr-2">Actions</span>
                 </div>
-                {sortedInventory.map(item => (
-                  <div key={item.id} className="grid grid-cols-[1fr,100px,150px,40px] gap-2 items-center p-2 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors">
-                    <span className="font-medium text-base text-slate-800 capitalize truncate" title={item.name}>{item.name}</span>
-                    <input
-                      type="text"
-                      value={item.quantity}
-                      onChange={(e) => handleUpdateItem(item.id, 'quantity', e.target.value)}
-                      placeholder="Qty"
-                      className={`${baseInputClasses} border-slate-300`}
-                      aria-label={`Quantity for ${item.name}`}
-                    />
-                    <input
-                      type="date"
-                      value={item.expirationDate}
-                      onChange={(e) => handleUpdateItem(item.id, 'expirationDate', e.target.value)}
-                      className={`${baseInputClasses} ${getExpirationClasses(item.expirationDate)}`}
-                      aria-label={`Expiration date for ${item.name}`}
-                    />
-                    <button onClick={() => handleRemoveItem(item.id)} className="p-2 text-slate-400 hover:text-red-500 transition-colors" aria-label={`Remove ${item.name}`}>
-                      <TrashIcon className="h-5 w-5" />
-                    </button>
+                {sortedInventory.map(item => {
+                  const isEditing = editingItemId === item.id;
+                  return (
+                  <div key={item.id}>
+                    <div className="grid grid-cols-[1fr,100px,150px,80px] gap-2 items-center p-2 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors">
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          value={editingItemName}
+                          onChange={(e) => setEditingItemName(e.target.value)}
+                          className={`${baseInputClasses} border-emerald-300 capitalize`}
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveEdit();
+                            if (e.key === 'Escape') handleCancelEdit();
+                          }}
+                        />
+                      ) : (
+                        <span className="font-medium text-base text-slate-800 capitalize truncate" title={item.name}>{item.name}</span>
+                      )}
+                      <input
+                        type="text"
+                        value={item.quantity}
+                        onChange={(e) => handleUpdateItem(item.id, 'quantity', e.target.value)}
+                        placeholder="Qty"
+                        className={`${baseInputClasses} border-slate-300`}
+                        aria-label={`Quantity for ${item.name}`}
+                      />
+                      <input
+                        type="date"
+                        value={item.expirationDate}
+                        onChange={(e) => handleUpdateItem(item.id, 'expirationDate', e.target.value)}
+                        className={`${baseInputClasses} ${getExpirationClasses(item.expirationDate)}`}
+                        aria-label={`Expiration date for ${item.name}`}
+                      />
+                      <div className="flex items-center justify-end">
+                        {isEditing ? (
+                          <>
+                            <button onClick={handleSaveEdit} className="p-2 text-slate-400 hover:text-emerald-500" aria-label={`Save changes for ${item.name}`}>
+                              <CheckIcon className="h-5 w-5" />
+                            </button>
+                             <button onClick={handleCancelEdit} className="p-2 text-slate-400 hover:text-red-500" aria-label={`Cancel editing ${item.name}`}>
+                              <XMarkIcon className="h-5 w-5" />
+                            </button>
+                          </>
+                        ) : (
+                           <>
+                            <button onClick={() => handleStartEdit(item)} className="p-2 text-slate-400 hover:text-emerald-500 transition-colors" aria-label={`Edit ${item.name}`}>
+                              <PencilIcon className="h-5 w-5" />
+                            </button>
+                            <button onClick={() => handleRemoveItem(item.id)} className="p-2 text-slate-400 hover:text-red-500 transition-colors" aria-label={`Remove ${item.name}`}>
+                              <TrashIcon className="h-5 w-5" />
+                            </button>
+                           </>
+                        )}
+                      </div>
+                    </div>
+                    {isEditing && editError && <p className="text-red-600 text-xs px-2 mt-1">{editError}</p>}
                   </div>
-                ))}
+                )})}
               </div>
             </div>
           ) : (
@@ -170,7 +242,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({ inventory, setInve
           )}
         </div>
         
-        <form onSubmit={handleAddItem} className="mt-4 pt-4 border-t border-slate-200 grid grid-cols-[1fr,100px,150px,auto] gap-2 items-end">
+        <form onSubmit={handleAddItem} className="mt-4 pt-4 border-t border-slate-200 grid grid-cols-[1fr,100px,150px,80px] gap-2 items-end">
           <div className="flex-grow">
             <label htmlFor="itemName" className="text-xs font-medium text-slate-600">Item Name</label>
             <input
@@ -207,8 +279,8 @@ export const InventoryList: React.FC<InventoryListProps> = ({ inventory, setInve
               className="w-full px-2 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
             />
           </div>
-          <button type="submit" className="h-10 p-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:bg-slate-300" aria-label="Add item">
-            <PlusIcon className="h-6 w-6" />
+          <button type="submit" className="h-10 px-4 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:bg-slate-300 font-semibold text-sm" aria-label="Add item">
+            Add
           </button>
         </form>
       </div>

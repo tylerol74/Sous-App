@@ -23,7 +23,7 @@ export const Header: React.FC<HeaderProps> = ({ userEmail, isInventoryVisible, o
             className="flex items-center px-4 py-2 bg-slate-100 text-slate-700 font-semibold rounded-lg hover:bg-slate-200 transition-colors"
           >
             <PantryIcon className="h-5 w-5 mr-2" />
-            {isInventoryVisible ? 'Focus Mode' : 'Manage Pantry'}
+            {isInventoryVisible ? 'Hide Pantry' : 'Manage Pantry'}
           </button>
           <button
             onClick={onLogout}
