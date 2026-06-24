@@ -1,13 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { CameraIcon, CheckIcon, ReloadIcon, UploadIcon } from './icons';
 import { LoadingSpinner } from './LoadingSpinner';
+import { resizeAndCompressImageDataUrl } from '../utils';
 
 interface ImageCaptureModalProps {
   onClose: () => void;
   onImageCapture: (data: { imageData: string; mimeType: string }) => void;
 }
 
-type Phase = 'select' | 'camera_initializing' | 'camera_active' | 'preview' | 'error';
+type Phase = 'select' | 'camera_initializing' | 'camera_active' | 'compressing' | 'preview' | 'error';
+
 const isCameraSupported = typeof window !== 'undefined' && navigator.mediaDevices && 'getUserMedia' in navigator.mediaDevices;
 const isFileSupported = typeof window !== 'undefined' && 'FileReader' in window;
 
@@ -46,7 +48,7 @@ export const ImageCaptureModal: React.FC<ImageCaptureModalProps> = ({ onClose, o
     }
   }, [stopCamera]);
 
-  const takePhoto = useCallback(() => {
+  const takePhoto = useCallback(async () => {
     if (videoRef.current) {
       const canvas = document.createElement('canvas');
       canvas.width = videoRef.current.videoWidth;
@@ -55,9 +57,16 @@ export const ImageCaptureModal: React.FC<ImageCaptureModalProps> = ({ onClose, o
       if (ctx) {
         ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL('image/jpeg');
-        setCapturedImage(dataUrl);
-        setPhase('preview');
+        setPhase('compressing');
         stopCamera();
+        try {
+          const compressed = await resizeAndCompressImageDataUrl(dataUrl);
+          setCapturedImage(compressed);
+          setPhase('preview');
+        } catch (err) {
+          setError('Failed to optimize captured photo.');
+          setPhase('error');
+        }
       }
     }
   }, [stopCamera]);
@@ -66,11 +75,18 @@ export const ImageCaptureModal: React.FC<ImageCaptureModalProps> = ({ onClose, o
     const file = event.target.files?.[0];
     if (!file) return;
 
+    setPhase('compressing');
     const reader = new FileReader();
     reader.readAsDataURL(file);
-    reader.onload = () => {
-      setCapturedImage(reader.result as string);
-      setPhase('preview');
+    reader.onload = async () => {
+      try {
+        const compressed = await resizeAndCompressImageDataUrl(reader.result as string);
+        setCapturedImage(compressed);
+        setPhase('preview');
+      } catch (err) {
+        setError('Failed to optimize selected file.');
+        setPhase('error');
+      }
     };
     reader.onerror = () => {
       setError('Failed to read the selected file.');
@@ -140,6 +156,14 @@ export const ImageCaptureModal: React.FC<ImageCaptureModalProps> = ({ onClose, o
                             <div className="h-12 w-12 bg-slate-200 rounded-full"></div>
                         </button>
                     </div>
+                </div>
+            )
+        case 'compressing':
+            return (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-600 bg-slate-100">
+                    <LoadingSpinner className="h-10 w-10 mb-2 text-emerald-500 animate-spin"/>
+                    <p className="font-semibold text-slate-700">Optimizing Photo...</p>
+                    <p className="text-xs text-slate-400 mt-1 px-4 text-center">Compressing & scaling image for lightning-fast AI analysis</p>
                 </div>
             )
         case 'preview':

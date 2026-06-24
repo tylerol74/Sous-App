@@ -57,6 +57,70 @@ function getAi() {
   return aiClient;
 }
 
+// Wrapper for robust generation with exponential backoff and model fallbacks
+async function generateContentWithRetry(parameters: any, maxRetries = 3): Promise<any> {
+  const ai = getAi();
+  let delay = 1000;
+  let lastError: any = null;
+
+  // If the preferred gemini-3.5-flash model fails or experiences high volume,
+  // we fallback to other highly robust & fast flash models as defined in SKILL.md:
+  // - "gemini-flash-latest" or "gemini-3.1-flash-lite"
+  const modelsToTry = [
+    parameters.model || "gemini-3.5-flash",
+    "gemini-flash-latest",
+    "gemini-3.1-flash-lite"
+  ];
+
+  for (const model of modelsToTry) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`[Gemini API] Request using model '${model}' (Attempt ${attempt}/${maxRetries})...`);
+        const response = await ai.models.generateContent({
+          ...parameters,
+          model: model
+        });
+        return response;
+      } catch (err: any) {
+        lastError = err;
+        const errMsg = err?.message || String(err);
+        const status = err?.status || err?.code || "";
+        console.warn(`[Gemini API] Attempt ${attempt} failed with model ${model}: ${errMsg}`);
+
+        // Check if error is due to high volume, service unavailable, rate limits, or transient 503
+        const isRetryable =
+          errMsg.includes("503") ||
+          errMsg.includes("429") ||
+          errMsg.toLowerCase().includes("unavailable") ||
+          errMsg.toLowerCase().includes("high demand") ||
+          errMsg.toLowerCase().includes("spikes in demand") ||
+          errMsg.toLowerCase().includes("temporary") ||
+          errMsg.toLowerCase().includes("overloaded") ||
+          errMsg.toLowerCase().includes("rate limit") ||
+          status === 503 ||
+          status === 429;
+
+        if (isRetryable && attempt < maxRetries) {
+          const jitter = Math.random() * 200;
+          const waitTime = delay + jitter;
+          console.log(`[Gemini API] Transient error detected. Retrying in ${Math.round(waitTime)}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
+          delay *= 2; // exponential increase
+        } else {
+          // If we can't retry this model anymore, break out of this model's loop to try the fallback model
+          break;
+        }
+      }
+    }
+    // Reset delay for the fallback model
+    delay = 1000;
+    console.warn(`[Gemini API] All attempts failed for model '${model}'. Trying next fallback model...`);
+  }
+
+  // If all models failed, propagate the last error back
+  throw lastError || new Error("All generative models failed to respond due to high capacity volume.");
+}
+
 // Auth API Endpoints
 app.post("/api/auth/signup", async (req, res) => {
   try {
@@ -199,7 +263,7 @@ app.post("/api/barcode/identify", async (req, res) => {
         }
       };
 
-      const response = await ai.models.generateContent({
+      const response = await generateContentWithRetry({
         model: "gemini-3.5-flash",
         contents: { parts: [textPart, imagePart] },
         config: {
@@ -246,7 +310,7 @@ app.post("/api/image/identify", async (req, res) => {
       }
     };
 
-    const response = await ai.models.generateContent({
+    const response = await generateContentWithRetry({
       model: "gemini-3.5-flash",
       contents: { parts: [textPart, imagePart] },
       config: {
@@ -372,7 +436,7 @@ For each recipe, divide ingredients strictly into 'ingredients.have' (ingredient
       required: ["title", "description", "ingredients", "instructions"]
     };
 
-    const response = await ai.models.generateContent({
+    const response = await generateContentWithRetry({
       model: "gemini-3.5-flash",
       contents: userPrompt,
       config: {

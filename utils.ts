@@ -80,3 +80,59 @@ export const deductQuantity = (pantryQty: string, recipeQty: string): { newQty: 
   return { newQty: '0', isDepleted: true };
 };
 
+/**
+ * Resizes and compresses a base64 image Data URL using HTML Canvas.
+ * Caps the maximum dimension to maxDimension (default 1024px) and quality to 0.75.
+ * This dramatically reduces upload size from multiple megabytes to ~100-150KB,
+ * ensuring rapid transmission and eliminating Gemini server/model overload.
+ */
+export const resizeAndCompressImageDataUrl = (
+  dataUrl: string, 
+  maxDimension: number = 1024, 
+  quality: number = 0.75
+): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.src = dataUrl;
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+
+      // Keep aspect ratio but cap longest side to maxDimension
+      if (width > height) {
+        if (width > maxDimension) {
+          height = Math.round((height * maxDimension) / width);
+          width = maxDimension;
+        }
+      } else {
+        if (height > maxDimension) {
+          width = Math.round((width * maxDimension) / height);
+          height = maxDimension;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(dataUrl); // fallback
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0, width, height);
+      try {
+        const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(compressedDataUrl);
+      } catch (err) {
+        resolve(dataUrl); // fallback on exception
+      }
+    };
+    img.onerror = (err) => {
+      reject(new Error("Failed to load image for compression"));
+    };
+  });
+};
+
+
